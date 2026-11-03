@@ -1,12 +1,11 @@
 import aws_cdk as cdk
 
-from infra.aws_cdk_vpc_provisioning_api_stack import AwsCdkVpcProvisioningApiStack
-
+from infra.foundation_stack import FoundationStack
 
 app = cdk.App()
-AwsCdkVpcProvisioningApiStack(
+FoundationStack(
     app,
-    "AwsCdkVpcProvisioningApiStack",
+    "FoundationStack",
 )
 
 app.synth()
