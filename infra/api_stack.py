@@ -1,7 +1,7 @@
-from aws_cdk import Stack
-from aws_cdk import aws_apigateway as apigw
-from aws_cdk import aws_cognito as cognito
+from aws_cdk import Stack, aws_apigateway, aws_cognito
 from constructs import Construct
+
+from infra.constructs.function_factory import ManagedFunction
 
 
 class ApiStack(Stack):
@@ -9,42 +9,40 @@ class ApiStack(Stack):
         self,
         scope: Construct,
         construct_id: str,
-        user_pool: cognito.IUserPool,
+        user_pool: aws_cognito.IUserPool,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # create API Gateway
-        api = apigw.RestApi(
+        api = aws_apigateway.RestApi(
             self,
-            "Api",
+            "vpc-provisioning-api",
             rest_api_name="vpc-provisioning-api",
-            deploy_options=apigw.StageOptions(stage_name="v1"),
+            deploy_options=aws_apigateway.StageOptions(stage_name="v1"),
         )
 
         # set the authorizer to the created user pool
-        authorizer = apigw.CognitoUserPoolsAuthorizer(
-            self, "Authorizer", cognito_user_pools=[user_pool]
+        authorizer = aws_apigateway.CognitoUserPoolsAuthorizer(
+            self,
+            "vpc-provisioning-api-authorizer",
+            authorizer_name="vpc-provisioning-api-authorizer",
+            cognito_user_pools=[user_pool],
         )
 
-        # test endpoint
-        mock_integration = apigw.MockIntegration(
-            integration_responses=[
-                apigw.IntegrationResponse(
-                    status_code="200",
-                    response_templates={
-                        "application/json": '{"message": "Authorized request successful!"}'
-                    },
-                )
-            ],
-            request_templates={"application/json": '{"statusCode": 200}'},
+        # create the health function
+        health_function = ManagedFunction(
+            self,
+            "vpc-provisioning-api-health-function",
+            handler="main.lambda_handler",
+            code_path="lambda/health",
         )
 
-        test_resource = api.root.add_resource("test")
-        test_resource.add_method(
+        # attach Lambda integration
+        health_resource = api.root.add_resource("health")
+        health_resource.add_method(
             "GET",
-            mock_integration,
+            aws_apigateway.LambdaIntegration(health_function.function),
             authorizer=authorizer,
-            authorization_type=apigw.AuthorizationType.COGNITO,
-            method_responses=[apigw.MethodResponse(status_code="200")],
+            authorization_type=aws_apigateway.AuthorizationType.COGNITO,
         )

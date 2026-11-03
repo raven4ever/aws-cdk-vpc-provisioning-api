@@ -1,6 +1,4 @@
-from aws_cdk import Duration, RemovalPolicy, Stack
-from aws_cdk import aws_cognito as cognito
-from aws_cdk import aws_dynamodb as dynamodb
+from aws_cdk import Duration, RemovalPolicy, Stack, aws_cognito, aws_dynamodb
 from constructs import Construct
 
 
@@ -9,22 +7,23 @@ class FoundationStack(Stack):
         super().__init__(scope, construct_id, **kwargs)
 
         # DynamoDB Table to store VPC requests data
-        self.table = dynamodb.Table(
+        self.table = aws_dynamodb.Table(
             self,
             "vpc-provisioning-api-table",
             table_name="vpc-provisioning-api-table",
-            partition_key=dynamodb.Attribute(name="pk", type=dynamodb.AttributeType.STRING),
-            sort_key=dynamodb.Attribute(name="sk", type=dynamodb.AttributeType.STRING),
+            partition_key=aws_dynamodb.Attribute(name="pk", type=aws_dynamodb.AttributeType.STRING),
+            sort_key=aws_dynamodb.Attribute(name="sk", type=aws_dynamodb.AttributeType.STRING),
             removal_policy=RemovalPolicy.DESTROY,
         )
 
         # create Cognito Pool
-        self.user_pool = cognito.UserPool(
+        self.user_pool = aws_cognito.UserPool(
             self,
-            "UserPool",
+            "vpc-provisioning-api-user-pool",
+            user_pool_name="vpc-provisioning-api-user-pool",
             self_sign_up_enabled=False,
-            sign_in_aliases=cognito.SignInAliases(username=True, email=True),
-            password_policy=cognito.PasswordPolicy(
+            sign_in_aliases=aws_cognito.SignInAliases(username=True, email=True),
+            password_policy=aws_cognito.PasswordPolicy(
                 min_length=17,
                 require_lowercase=True,
                 require_uppercase=True,
@@ -36,7 +35,7 @@ class FoundationStack(Stack):
         )
 
         # add test user
-        cognito.CfnUserPoolUser(
+        aws_cognito.CfnUserPoolUser(
             self,
             "TestUser",
             user_pool_id=self.user_pool.user_pool_id,
@@ -51,6 +50,6 @@ class FoundationStack(Stack):
 
         self.client = self.user_pool.add_client(
             "AppClient",
-            auth_flows=cognito.AuthFlow(user_password=True),
+            auth_flows=aws_cognito.AuthFlow(user_password=True),
             generate_secret=False,
         )
