@@ -1,4 +1,4 @@
-from aws_cdk import Stack, aws_apigateway, aws_cognito
+from aws_cdk import CfnOutput, Stack, aws_apigateway, aws_cognito, aws_dynamodb, aws_iam
 from constructs import Construct
 
 from infra.constructs.function_factory import ManagedFunction
@@ -15,21 +15,32 @@ FUNCTIONS = {
         "handler": "api.create_vpc.handler",
         "http_method": "POST",
         "http_path": "vpc",
+        # shortcut: these read-only actions use "*". The quota ARNs may allow tighter scoping,
+        # check that before restricting. ec2:DescribeVpcs has no resource-level permissions.
+        "iam_actions": [
+            "servicequotas:GetServiceQuota",
+            "servicequotas:GetAWSDefaultServiceQuota",
+            "ec2:DescribeVpcs",
+        ],
+        "table_actions": ["dynamodb:PutItem"],
     },
     "list_vpcs": {
         "handler": "api.list_vpcs.handler",
         "http_method": "GET",
         "http_path": "vpc",
+        "table_actions": ["dynamodb:Scan"],
     },
     "get_vpc": {
         "handler": "api.get_vpc.handler",
         "http_method": "GET",
         "http_path": "vpc/{id}",
+        "table_actions": ["dynamodb:GetItem"],
     },
     "delete_vpc": {
         "handler": "api.delete_vpc.handler",
         "http_method": "DELETE",
         "http_path": "vpc/{id}",
+        "table_actions": ["dynamodb:UpdateItem", "dynamodb:GetItem"],
     },
 }
 
@@ -40,6 +51,7 @@ class ApiStack(Stack):
         scope: Construct,
         construct_id: str,
         user_pool: aws_cognito.IUserPool,
+        table: aws_dynamodb.ITable,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -51,6 +63,8 @@ class ApiStack(Stack):
             rest_api_name="vpc-provisioning-api",
             deploy_options=aws_apigateway.StageOptions(stage_name="v1"),
         )
+
+        CfnOutput(self, "ApiUrl", value=api.url)
 
         # set the authorizer to the created user pool
         authorizer = aws_apigateway.CognitoUserPoolsAuthorizer(
@@ -72,7 +86,14 @@ class ApiStack(Stack):
                 f"vpc-provisioning-api-${func_key}-function",
                 handler=cfg["handler"],
                 code_path=CODE_PATH,
+                environment={"TABLE_NAME": table.table_name} if "table_actions" in cfg else None,
             )
+            if "iam_actions" in cfg:
+                function.role.add_to_policy(
+                    aws_iam.PolicyStatement(actions=cfg["iam_actions"], resources=["*"])
+                )
+            if "table_actions" in cfg:
+                table.grant(function.function, *cfg["table_actions"])
 
             # attach Lambda integration
             # walk the path segments, reusing resources already created (vpc, vpc/{id})

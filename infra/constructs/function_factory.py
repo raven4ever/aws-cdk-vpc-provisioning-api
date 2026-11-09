@@ -1,6 +1,9 @@
 from aws_cdk import (
+    Duration,
+    RemovalPolicy,
     aws_iam,
     aws_lambda,
+    aws_logs,
 )
 from constructs import Construct
 
@@ -20,17 +23,17 @@ class ManagedFunction(Construct):
     ) -> None:
         super().__init__(scope, id)
 
-        # function IAM role
+        # function IAM role, with no managed policy: the only default permission is writing
+        # to the function's own log group (granted below)
         self.role = aws_iam.Role(
             self,
             "Role",
             assumed_by=aws_iam.ServicePrincipal("lambda.amazonaws.com"),
-            managed_policies=[
-                aws_iam.ManagedPolicy.from_aws_managed_policy_name(
-                    "service-role/AWSLambdaBasicExecutionRole"
-                )
-            ],
         )
+
+        # own log group so the role can be limited to it, and it is removed on destroy
+        log_group = aws_logs.LogGroup(self, "Logs", removal_policy=RemovalPolicy.DESTROY)
+        log_group.grant_write(self.role)
 
         # Lambda function
         self.function = aws_lambda.Function(
@@ -40,5 +43,8 @@ class ManagedFunction(Construct):
             handler=handler,
             code=aws_lambda.Code.from_asset(code_path),
             role=self.role,
+            log_group=log_group,
             environment=environment or {},
+            # the default 3 seconds is too short for the API calls some handlers make
+            timeout=Duration.seconds(15),
         )

@@ -1,3 +1,5 @@
+import os
+
 import aws_cdk as cdk
 
 from infra.api_stack import ApiStack
@@ -10,10 +12,16 @@ app = cdk.App()
 foundation_stack = FoundationStack(
     app,
     "FoundationStack",
+    ipam_cidr=os.environ.get("IPAM_ROOT_CIDR", "10.0.0.0/8"),
 )
 
 # create the API stack
-ApiStack(app, "ApiStack", user_pool=foundation_stack.user_pool)
+ApiStack(
+    app,
+    "ApiStack",
+    user_pool=foundation_stack.user_pool,
+    table=foundation_stack.table,
+)
 
 
 app.synth()

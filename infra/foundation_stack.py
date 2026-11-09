@@ -1,9 +1,11 @@
 from aws_cdk import (
+    CfnOutput,
     Duration,
     RemovalPolicy,
     Stack,
     aws_cognito,
     aws_dynamodb,
+    aws_ec2,
 )
 from aws_cdk import (
     custom_resources as cr,
@@ -12,7 +14,7 @@ from constructs import Construct
 
 
 class FoundationStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, ipam_cidr: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         # DynamoDB Table to store VPC requests data
@@ -48,7 +50,7 @@ class FoundationStack(Stack):
             self,
             "TestUser",
             user_pool_id=self.user_pool.user_pool_id,
-            username="testuser@example.com",
+            username="testuser",
             user_attributes=[
                 {"name": "email", "value": "testuser@example.com"},
                 {"name": "email_verified", "value": "true"},
@@ -83,3 +85,30 @@ class FoundationStack(Stack):
             auth_flows=aws_cognito.AuthFlow(user_password=True),
             generate_secret=False,
         )
+
+        CfnOutput(self, "UserPoolClientId", value=self.client.user_pool_client_id)
+
+        # IPAM hands out the VPC CIDRs. Private IPv4 management needs the advanced tier.
+        ipam = aws_ec2.CfnIPAM(
+            self,
+            "vpc-provisioning-api-ipam",
+            description="vpc-provisioning-api",
+            tier="advanced",
+            operating_regions=[
+                aws_ec2.CfnIPAM.IpamOperatingRegionProperty(region_name=self.region)
+            ],
+        )
+
+        # VPCs are created only in this Region, and a VPC can only draw from a pool whose
+        # locale is its own Region, so one pool is enough
+        self.ipam_pool = aws_ec2.CfnIPAMPool(
+            self,
+            "vpc-provisioning-api-ipam-pool",
+            description="vpc-provisioning-api",
+            address_family="ipv4",
+            ipam_scope_id=ipam.attr_private_default_scope_id,
+            locale=self.region,
+            provisioned_cidrs=[aws_ec2.CfnIPAMPool.ProvisionedCidrProperty(cidr=ipam_cidr)],
+        )
+
+        CfnOutput(self, "IpamPoolId", value=self.ipam_pool.attr_ipam_pool_id)
