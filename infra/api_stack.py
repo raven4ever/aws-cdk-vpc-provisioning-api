@@ -1,7 +1,10 @@
 from aws_cdk import CfnOutput, Stack, aws_apigateway, aws_cognito, aws_dynamodb, aws_iam
 from constructs import Construct
 
+from infra.constructs.create_vpc_workflow import CreateWorkflow
+from infra.constructs.delete_vpc_workflow import DeleteWorkflow
 from infra.constructs.function_factory import ManagedFunction
+from infra.constructs.workflow_steps import CleanupFunction
 
 CODE_PATH = "lambda"
 
@@ -52,6 +55,7 @@ class ApiStack(Stack):
         construct_id: str,
         user_pool: aws_cognito.IUserPool,
         table: aws_dynamodb.ITable,
+        ipam_pool_id: str,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -74,6 +78,16 @@ class ApiStack(Stack):
             cognito_user_pools=[user_pool],
         )
 
+        cleanup = CleanupFunction(self, "cleanup").function
+        create_workflow = CreateWorkflow(
+            self,
+            "create-vpc-workflow",
+            table=table,
+            ipam_pool_id=ipam_pool_id,
+            cleanup_function=cleanup,
+        )
+        delete_workflow = DeleteWorkflow(self, "delete-vpc-workflow", table=table, cleanup=cleanup)
+
         resources = {}
 
         # create the API Lambdas
@@ -88,6 +102,16 @@ class ApiStack(Stack):
                 code_path=CODE_PATH,
                 environment={"TABLE_NAME": table.table_name} if "table_actions" in cfg else None,
             )
+            if func_key == "create_vpc":
+                function.function.add_environment(
+                    "CREATE_STATE_MACHINE_ARN", create_workflow.state_machine.state_machine_arn
+                )
+                create_workflow.state_machine.grant_start_execution(function.function)
+            if func_key == "delete_vpc":
+                function.function.add_environment(
+                    "DELETE_STATE_MACHINE_ARN", delete_workflow.state_machine.state_machine_arn
+                )
+                delete_workflow.state_machine.grant_start_execution(function.function)
             if "iam_actions" in cfg:
                 function.role.add_to_policy(
                     aws_iam.PolicyStatement(actions=cfg["iam_actions"], resources=["*"])
@@ -111,6 +135,3 @@ class ApiStack(Stack):
                 authorizer=authorizer,
                 authorization_type=aws_apigateway.AuthorizationType.COGNITO,
             )
-
-        # create the create step function
-        # CreateWorkflow(self)

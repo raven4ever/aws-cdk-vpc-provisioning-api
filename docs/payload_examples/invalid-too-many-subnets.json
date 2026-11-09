@@ -1,0 +1,5 @@
+{
+  "vpc_name": "too-many-subnets",
+  "vpc_prefix": 28,
+  "subnet_tiers": ["public", "public"]
+}

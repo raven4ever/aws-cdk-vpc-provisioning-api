@@ -24,6 +24,8 @@ class FoundationStack(Stack):
             table_name="vpc-provisioning-api-table",
             partition_key=aws_dynamodb.Attribute(name="pk", type=aws_dynamodb.AttributeType.STRING),
             sort_key=aws_dynamodb.Attribute(name="sk", type=aws_dynamodb.AttributeType.STRING),
+            # tombstones of deleted VPCs set this epoch-seconds attribute and expire
+            time_to_live_attribute="ttl",
             removal_policy=RemovalPolicy.DESTROY,
         )
 

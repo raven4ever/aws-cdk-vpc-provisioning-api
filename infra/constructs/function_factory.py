@@ -20,6 +20,7 @@ class ManagedFunction(Construct):
         code_path: str,
         runtime: aws_lambda.Runtime = aws_lambda.Runtime.PYTHON_3_14,
         environment: dict = None,
+        timeout: Duration | None = None,
     ) -> None:
         super().__init__(scope, id)
 
@@ -46,5 +47,5 @@ class ManagedFunction(Construct):
             log_group=log_group,
             environment=environment or {},
             # the default 3 seconds is too short for the API calls some handlers make
-            timeout=Duration.seconds(15),
+            timeout=timeout or Duration.seconds(15),
         )

@@ -1,0 +1,5 @@
+{
+  "vpc_name": "Team A.dev-01_test",
+  "vpc_prefix": 24,
+  "subnet_tiers": ["public", "private_isolated"]
+}

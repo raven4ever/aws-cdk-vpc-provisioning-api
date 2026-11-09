@@ -1,0 +1,5 @@
+{
+  "vpc_name": "web-with-nat",
+  "vpc_prefix": 22,
+  "subnet_tiers": ["public", "private_egress"]
+}

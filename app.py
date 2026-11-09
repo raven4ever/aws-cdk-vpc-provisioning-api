@@ -21,6 +21,7 @@ ApiStack(
     "ApiStack",
     user_pool=foundation_stack.user_pool,
     table=foundation_stack.table,
+    ipam_pool_id=foundation_stack.ipam_pool.attr_ipam_pool_id,
 )
 
 

@@ -1,0 +1,5 @@
+{
+  "vpc_name": "isolated-only",
+  "vpc_prefix": 24,
+  "subnet_tiers": ["private_isolated", "private_isolated"]
+}

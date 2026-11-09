@@ -14,6 +14,11 @@ def key(vpc_id: str) -> dict[str, str]:
     return {"pk": f"VPC#{vpc_id}", "sk": "META"}
 
 
+def name_key(name: str) -> dict[str, str]:
+    """Lock item that keeps VPC names unique, case-insensitively."""
+    return {"pk": f"NAME#{name.lower()}", "sk": "LOCK"}
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat()
 

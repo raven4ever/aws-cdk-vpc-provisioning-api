@@ -1,0 +1,5 @@
+{
+  "vpc_name": "prefix-too-large",
+  "vpc_prefix": 29,
+  "subnet_tiers": ["public"]
+}

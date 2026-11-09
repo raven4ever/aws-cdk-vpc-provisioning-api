@@ -1,0 +1,5 @@
+{
+  "vpc_name": "egress-no-public",
+  "vpc_prefix": 24,
+  "subnet_tiers": ["private_egress"]
+}

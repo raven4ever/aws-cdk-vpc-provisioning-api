@@ -1,0 +1,5 @@
+{
+  "vpc_name": "unknown-tier",
+  "vpc_prefix": 24,
+  "subnet_tiers": ["public", "dmz"]
+}

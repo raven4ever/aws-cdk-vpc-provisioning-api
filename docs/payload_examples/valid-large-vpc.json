@@ -1,0 +1,9 @@
+{
+  "vpc_name": "large-vpc",
+  "vpc_prefix": 16,
+  "subnet_tiers": [
+    "public", "public", "public",
+    "private_egress", "private_egress", "private_egress",
+    "private_isolated", "private_isolated"
+  ]
+}

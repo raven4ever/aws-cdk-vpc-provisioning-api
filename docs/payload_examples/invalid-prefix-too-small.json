@@ -1,0 +1,5 @@
+{
+  "vpc_name": "prefix-too-small",
+  "vpc_prefix": 15,
+  "subnet_tiers": ["public"]
+}

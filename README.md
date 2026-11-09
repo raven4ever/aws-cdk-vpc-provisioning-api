@@ -29,13 +29,19 @@ Out of scope:
 
 ## Architectural Decisions
 
-| #   | Decision                    | Outcome                                                                | Details                                                |
-| --- | --------------------------- | ---------------------------------------------------------------------- | ------------------------------------------------------ |
-| 001 | Infrastructure as code tool | AWS CDK: no state backend to set up, target account unknown            | [ADR-001](docs/adr/001-infrastructure-as-code-tool.md) |
-| 002 | Authentication mechanism    | Amazon Cognito: no custom auth logic, focus stays on the VPC API       | [ADR-002](docs/adr/002-authentication-mechanism.md)    |
-| 003 | VPC creation flow           | Step Functions with wait steps for slow resources such as NAT gateways | [ADR-003](docs/adr/003-vpc-creation-flow.md)           |
-| 004 | IP address allocator        | Hybrid: IPAM allocates the CIDR, DynamoDB caches it for retrieval      | [ADR-004](docs/adr/004-ip-address-allocator.md)        |
-| 005 | Lambda code layout          | One source tree, one module per function, shared code alongside        | [ADR-005](docs/adr/005-lambda-code-layout.md)          |
+| #   | Decision                    | Decision                                                                | Details                                                     |
+| --- | --------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 001 | Infrastructure as code tool | AWS CDK: no state backend to set up, target account unknown             | [ADR-001](docs/adr/001-infrastructure-as-code-tool.md)      |
+| 002 | Authentication mechanism    | Amazon Cognito: no custom auth logic, focus stays on the VPC API        | [ADR-002](docs/adr/002-authentication-mechanism.md)         |
+| 003 | VPC creation flow           | Step Functions with wait steps for slow resources such as NAT gateways  | [ADR-003](docs/adr/003-vpc-creation-flow.md)                |
+| 004 | IP address allocator        | Hybrid: IPAM allocates the CIDR, DynamoDB caches it for retrieval       | [ADR-004](docs/adr/004-ip-address-allocator.md)             |
+| 005 | Lambda code layout          | One source tree, one module per function, shared code alongside         | [ADR-005](docs/adr/005-lambda-code-layout.md)               |
+| 006 | Duplicate request handling  | Unique VPC name: a second request with the same name gets a 409         | [ADR-006](docs/adr/006-duplicate-request-handling.md)       |
+| 007 | Single Region               | VPCs are created in the deployed Region only, IPAM pools are per Region | [ADR-007](docs/adr/007-single-region.md)                    |
+| 008 | VPC identity and status     | API-created id from the first response, AWS id stored later, poll GET   | [ADR-008](docs/adr/008-vpc-identity-and-status-tracking.md) |
+| 009 | Delete semantics            | `DELETED` record with a 14 day TTL, delete only from ACTIVE or FAILED   | [ADR-009](docs/adr/009-delete-semantics.md)                 |
+| 010 | Failure handling            | Automatic rollback by tag with one shared cleanup Lambda                | [ADR-010](docs/adr/010-failure-handling-and-cleanup.md)     |
+| 011 | Request validation          | Standard library checks plus limits from the Service Quotas API         | [ADR-011](docs/adr/011-request-validation.md)               |
 
 ## Technology Stack
 
@@ -112,7 +118,7 @@ curl -s -X POST "${API_URL}vpc" \
 # list all VPCs
 curl -s "${API_URL}vpc" -H "Authorization: ${TOKEN}"
 
-# get one VPC and its status (PENDING, CREATING, ACTIVE, FAILED, DELETING)
+# get one VPC and its status (PENDING, CREATING, ACTIVE, FAILED, DELETING, DELETED)
 curl -s "${API_URL}vpc/<id>" -H "Authorization: ${TOKEN}"
 
 # delete a VPC (only when ACTIVE or FAILED)
@@ -120,3 +126,5 @@ curl -s -X DELETE "${API_URL}vpc/<id>" -H "Authorization: ${TOKEN}"
 ```
 
 `subnet_tiers` takes `public`, `private_egress` (NAT) or `private_isolated`, one entry per subnet. `vpc_prefix` goes from 16 to 28.
+
+More request bodies, valid and invalid, are in [docs/payload_examples](docs/payload_examples/README.md). Send one with `curl -d @docs/payload_examples/valid-three-tiers.json`.

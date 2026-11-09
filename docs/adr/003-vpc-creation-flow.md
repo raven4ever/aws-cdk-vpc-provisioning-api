@@ -24,6 +24,6 @@ Creating a VPC is many calls: the VPC itself, subnets, route tables, gateways an
 - Pro: each step is a small Lambda, and the execution history shows exactly where a run is or failed.
 - Con: the flow lives in a state machine definition, which is one more thing to learn and keep readable.
 
-## Outcome
+## Decision
 
 Step Functions. Wait steps handle resources like NAT gateways that take a long time to provision, and the flow stays visible in one place.

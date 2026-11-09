@@ -19,6 +19,6 @@ The whole stack (API Gateway, Lambda, Step Functions, DynamoDB, Cognito, IPAM) h
 - Pro: state is kept by CloudFormation, so there is no backend to set up.
 - Con: AWS only, and the target account/Region needs a one-time `cdk bootstrap`.
 
-## Outcome
+## Decision
 
 AWS CDK. With no state backend to provision and the target account still unknown, it is the lower-friction option. The project is AWS-only anyway, so Terraform's multi-cloud reach doesn't buy us anything here.

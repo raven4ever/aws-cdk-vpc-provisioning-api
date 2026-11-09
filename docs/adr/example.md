@@ -8,6 +8,6 @@
 
 <!-- list choices and pros and cons -->
 
-## Outcome
+## Decision
 
-<!-- the final outcome/choice and the rationale  -->
+<!-- the final decision and the rationale  -->

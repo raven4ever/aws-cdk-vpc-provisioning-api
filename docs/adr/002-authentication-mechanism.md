@@ -18,6 +18,6 @@ The API has to be authenticated. Any signed-in user can call every operation, so
 - Con: we would have to build and operate token storage and expiry handling ourselves.
 - Con: it is custom security code that has nothing to do with VPC provisioning.
 
-## Outcome
+## Decision
 
 Amazon Cognito. It needs no custom logic, which keeps the project focused on the VPC creation API.

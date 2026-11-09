@@ -1,0 +1,5 @@
+{
+  "vpc_name": "bad/name!",
+  "vpc_prefix": 24,
+  "subnet_tiers": ["public"]
+}

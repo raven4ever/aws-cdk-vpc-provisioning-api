@@ -1,0 +1,5 @@
+{
+  "vpc_name": "three-tiers",
+  "vpc_prefix": 20,
+  "subnet_tiers": ["public", "private_egress", "private_isolated"]
+}

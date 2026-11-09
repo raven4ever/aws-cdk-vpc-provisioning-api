@@ -1,13 +1,14 @@
 import json
+import os
 import re
 import uuid
 from typing import Any
 
 from botocore.exceptions import ClientError
-from common.aws import client, table
+from common.aws import client, sfn, table
 from common.http import error, response
 from common.quotas import quota
-from common.vpc import PENDING, key, now
+from common.vpc import FAILED, PENDING, key, name_key, now, set_status
 
 VPC_SUBNET_TIERS = {"public", "private_egress", "private_isolated"}
 VPC_NAME_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 _.-]{0,62}")
@@ -41,6 +42,9 @@ def parse_request(raw: str | None) -> dict[str, Any]:
     tiers = data.get("subnet_tiers")
     if not isinstance(tiers, list) or not tiers or not set(tiers) <= VPC_SUBNET_TIERS:
         raise ValueError(f"subnet_tiers must be a non-empty list of {sorted(VPC_SUBNET_TIERS)}")
+    # a NAT gateway lives in a public subnet
+    if "private_egress" in tiers and "public" not in tiers:
+        raise ValueError("private_egress subnets need at least one public subnet")
     # the smallest subnet is MAX_PREFIX, so that bounds how many fit in the VPC
     if len(tiers) > 2 ** (MAX_PREFIX - prefix):
         raise ValueError(f"a /{prefix} VPC cannot hold {len(tiers)} subnets")
@@ -73,8 +77,20 @@ def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     except ClientError:
         return error(502, "could not read the AWS quotas")
 
-    claims = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
+    # shortcut: the lock and the record are two writes, a crash between them leaves a lock that
+    # blocks the name. Use a transaction if that ever matters.
     vpc_id = str(uuid.uuid4())
+    try:
+        table().put_item(
+            Item={**name_key(request["vpc_name"]), "id": vpc_id},
+            ConditionExpression="attribute_not_exists(pk)",
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
+            raise
+        return error(409, f"a VPC named {request['vpc_name']} already exists")
+
+    claims = event.get("requestContext", {}).get("authorizer", {}).get("claims", {})
     timestamp = now()
     table().put_item(
         Item={
@@ -88,6 +104,15 @@ def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
         }
     )
 
-    # execution_id is a placeholder until the creation workflow is started here, named after
-    # the id. The workflow later stores the real AWS VPC id on the record as aws_vpc_id.
-    return response(200, {"verification": "ok", "id": vpc_id, "execution_id": 0})
+    # the execution is named after the id, so the id is the only handle the client needs
+    try:
+        sfn().start_execution(
+            stateMachineArn=os.environ["CREATE_STATE_MACHINE_ARN"],
+            name=vpc_id,
+            input=json.dumps({"id": vpc_id, **request}),
+        )
+    except ClientError:
+        set_status(vpc_id, FAILED, "could not start the creation workflow")
+        return error(500, "could not start VPC creation")
+
+    return response(202, {"id": vpc_id})

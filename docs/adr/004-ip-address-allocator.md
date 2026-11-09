@@ -23,6 +23,6 @@ Every VPC the API creates needs its own CIDR, and none of them may overlap. We n
 - Pro: reads are served from DynamoDB alongside the rest of the VPC record.
 - Con: the CIDR lives in two places, so the DynamoDB copy has to be written whenever an allocation is made.
 
-## Outcome
+## Decision
 
 Hybrid. IPAM generates the CIDR allocation, and the result is stored in DynamoDB as a cache, so VPC retrieval through the API doesn't need to go back to IPAM.

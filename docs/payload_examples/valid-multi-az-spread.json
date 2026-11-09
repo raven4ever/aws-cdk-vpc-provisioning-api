@@ -1,0 +1,9 @@
+{
+  "vpc_name": "multi-az",
+  "vpc_prefix": 20,
+  "subnet_tiers": [
+    "public", "public",
+    "private_egress", "private_egress",
+    "private_isolated", "private_isolated"
+  ]
+}
