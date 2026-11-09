@@ -4,19 +4,19 @@ import time
 from typing import Any
 
 from botocore.exceptions import ClientError
-from common.aws import sfn, table
+from common.aws import client, table
 from common.http import error, response
 from common.vpc import ACTIVE, DELETING, FAILED, key, name_key, now, set_status, to_api
 
-# deleted VPCs stay readable for this long, then DynamoDB removes the record
+# DELETED record stays readable this long, then TTL removes it
 TOMBSTONE_SECONDS = 14 * 24 * 3600
 
 
 def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     vpc_id = (event.get("pathParameters") or {}).get("id", "")
 
-    # one conditional write: only an existing ACTIVE or FAILED VPC moves to DELETING,
-    # so two concurrent deletes cannot both start a workflow
+    # one conditional write: only existing ACTIVE or FAILED moves to DELETING.
+    # Two concurrent deletes cannot both start a workflow.
     try:
         previous = table().update_item(
             Key=key(vpc_id),
@@ -34,20 +34,21 @@ def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     except ClientError as e:
         if e.response["Error"]["Code"] != "ConditionalCheckFailedException":
             raise
+        # condition failed: tell missing (404) from wrong state (409)
         item = table().get_item(Key=key(vpc_id)).get("Item")
         if not item:
             return error(404, "VPC not found")
         return error(409, f"VPC is {item['status']}, only {ACTIVE} or {FAILED} can be deleted")
 
-    # the workflow also removes the name lock, so it needs the lock key
+    # workflow also frees the name lock: pass its key
     try:
-        sfn().start_execution(
+        client("stepfunctions").start_execution(
             stateMachineArn=os.environ["DELETE_STATE_MACHINE_ARN"],
             input=json.dumps(
                 {
                     "id": vpc_id,
                     "name_lock": name_key(previous["vpc_name"])["pk"],
-                    "ttl": str(int(time.time()) + TOMBSTONE_SECONDS),  # DynamoDB N value as string
+                    "ttl": str(int(time.time()) + TOMBSTONE_SECONDS),  # DynamoDB N is a string
                 }
             ),
         )

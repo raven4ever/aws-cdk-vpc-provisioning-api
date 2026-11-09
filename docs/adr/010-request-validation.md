@@ -1,8 +1,8 @@
-# ADR-011 Request validation
+# ADR-010 Request validation
 
 ## Problem Statement
 
-`POST /vpc` has to reject bad requests before it starts a workflow that costs money. Two kinds of checks are needed: the shape of the body, and the limits of the AWS account in the Region.
+`POST /vpc` has to reject bad requests before it starts a workflow that costs money. Two kinds of checks are possible: the shape of the body, and the limits of the AWS account in the Region.
 
 ## Choices
 
@@ -26,8 +26,9 @@ Standard library. `parse_request` in `lambda/api/create_vpc.py` checks the shape
 - `vpc_prefix` is an integer from 16 to 28.
 - `subnet_tiers` is a non-empty list of `public`, `private_egress` or `private_isolated`.
 - The subnets fit into the VPC CIDR.
+- There are at most 200 subnets, the AWS default subnets-per-VPC quota.
 - `private_egress` is only allowed together with `public`, because the NAT gateway lives in a public subnet.
 
-Account limits come from the Service Quotas API instead of constants: subnets per VPC and VPCs per Region, using the applied value and falling back to the AWS default. The current number of VPCs comes from `DescribeVpcs` and includes VPCs the API did not create.
+Account limits are not checked in the API. Reading them needs the Service Quotas API, and counting VPCs needs the EC2 client. Both add AWS calls before the response. The workflow hits the same limits anyway: `CreateVpc` fails with `VpcLimitExceeded`, cleanup runs, and since the workflow Lambdas report AWS error codes as their error name, the record ends `FAILED` with `status_reason` `VpcLimitExceeded`. The subnet cap is a constant instead of the applied quota. A quota can be raised but not lowered below the default, so the constant can only be too strict.
 
-Known gaps: VPCs still being built are not counted yet, and the Elastic IP and NAT gateway quotas are not checked, so those failures show up later as a `FAILED` run. Pydantic is worth revisiting if the request schema grows.
+Known gaps: the VPC, Elastic IP and NAT gateway quotas are not checked up front, so those failures show up later as a `FAILED` run, and an account that raised its subnet quota above 200 has to change the constant to use it.

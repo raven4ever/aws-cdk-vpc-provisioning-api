@@ -2,16 +2,18 @@ import ipaddress
 import os
 from typing import Any
 
-from common.aws import client, table
+from common.aws import aws_error_names, client, table
 from common.ec2 import tags
 from common.vpc import key, now
 
 
+@aws_error_names
 def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
     """Create the VPC from the IPAM pool, the internet gateway and the subnets."""
     ec2 = client("ec2")
     request_id, name, tiers = event["id"], event["vpc_name"], event["subnet_tiers"]
 
+    # IPAM picks a free CIDR of this size
     vpc = ec2.create_vpc(
         Ipv4IpamPoolId=os.environ["IPAM_POOL_ID"],
         Ipv4NetmaskLength=event["vpc_prefix"],
@@ -51,6 +53,7 @@ def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
         )["InternetGateway"]["InternetGatewayId"]
         ec2.attach_internet_gateway(InternetGatewayId=igw_id, VpcId=vpc_id)
 
+    # save AWS ids now: GET shows them even if a later step fails
     table().update_item(
         Key=key(request_id),
         UpdateExpression="SET aws_vpc_id = :v, cidr = :c, subnets = :s, updated_at = :t",

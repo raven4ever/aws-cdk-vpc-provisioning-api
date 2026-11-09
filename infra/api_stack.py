@@ -1,51 +1,22 @@
-from aws_cdk import CfnOutput, Stack, aws_apigateway, aws_cognito, aws_dynamodb, aws_iam
+from aws_cdk import (
+    CfnOutput,
+    CustomResource,
+    Duration,
+    Stack,
+    aws_apigateway,
+    aws_cognito,
+    aws_dynamodb,
+    aws_iam,
+    aws_lambda,
+    aws_stepfunctions,
+    custom_resources,
+)
 from constructs import Construct
 
-from infra.constructs.create_vpc_workflow import CreateWorkflow
-from infra.constructs.delete_vpc_workflow import DeleteWorkflow
-from infra.constructs.function_factory import ManagedFunction
-from infra.constructs.workflow_steps import CleanupFunction
-
-CODE_PATH = "lambda"
-
-FUNCTIONS = {
-    "health": {
-        "handler": "api.health.handler",
-        "http_method": "GET",
-        "http_path": "health",
-    },
-    "create_vpc": {
-        "handler": "api.create_vpc.handler",
-        "http_method": "POST",
-        "http_path": "vpc",
-        # shortcut: these read-only actions use "*". The quota ARNs may allow tighter scoping,
-        # check that before restricting. ec2:DescribeVpcs has no resource-level permissions.
-        "iam_actions": [
-            "servicequotas:GetServiceQuota",
-            "servicequotas:GetAWSDefaultServiceQuota",
-            "ec2:DescribeVpcs",
-        ],
-        "table_actions": ["dynamodb:PutItem"],
-    },
-    "list_vpcs": {
-        "handler": "api.list_vpcs.handler",
-        "http_method": "GET",
-        "http_path": "vpc",
-        "table_actions": ["dynamodb:Scan"],
-    },
-    "get_vpc": {
-        "handler": "api.get_vpc.handler",
-        "http_method": "GET",
-        "http_path": "vpc/{id}",
-        "table_actions": ["dynamodb:GetItem"],
-    },
-    "delete_vpc": {
-        "handler": "api.delete_vpc.handler",
-        "http_method": "DELETE",
-        "http_path": "vpc/{id}",
-        "table_actions": ["dynamodb:UpdateItem", "dynamodb:GetItem"],
-    },
-}
+from infra.constructs.cleanup_function import CleanupFunction
+from infra.constructs.create_vpc_workflow import CreateVpcWorkflow
+from infra.constructs.delete_vpc_workflow import DeleteVpcWorkflow
+from infra.constructs.managed_function import ManagedFunction
 
 
 class ApiStack(Stack):
@@ -60,7 +31,6 @@ class ApiStack(Stack):
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # create API Gateway
         api = aws_apigateway.RestApi(
             self,
             "vpc-provisioning-api",
@@ -68,9 +38,14 @@ class ApiStack(Stack):
             deploy_options=aws_apigateway.StageOptions(stage_name="v1"),
         )
 
-        CfnOutput(self, "ApiUrl", value=api.url)
+        # api.url ends with "/", the base URL does not: clients append "/vpc" etc.
+        CfnOutput(
+            self,
+            "ApiBaseUrl",
+            value=f"https://{api.rest_api_id}.execute-api.{self.region}.{self.url_suffix}"
+            f"/{api.deployment_stage.stage_name}",
+        )
 
-        # set the authorizer to the created user pool
         authorizer = aws_apigateway.CognitoUserPoolsAuthorizer(
             self,
             "vpc-provisioning-api-authorizer",
@@ -79,59 +54,86 @@ class ApiStack(Stack):
         )
 
         cleanup = CleanupFunction(self, "cleanup").function
-        create_workflow = CreateWorkflow(
+        create_workflow = CreateVpcWorkflow(
             self,
             "create-vpc-workflow",
             table=table,
             ipam_pool_id=ipam_pool_id,
             cleanup_function=cleanup,
         )
-        delete_workflow = DeleteWorkflow(self, "delete-vpc-workflow", table=table, cleanup=cleanup)
+        delete_workflow = DeleteVpcWorkflow(
+            self, "delete-vpc-workflow", table=table, cleanup=cleanup
+        )
 
-        resources = {}
-
-        # create the API Lambdas
-        for func_key, cfg in FUNCTIONS.items():
-            print(f"triggering {func_key}")
-
-            # create the function
-            function = ManagedFunction(
+        # cdk destroy deletes this first. Cleanup removes all API-created VPCs, then waits for IPAM
+        # to release their CIDRs. Else Foundation stack cannot delete the pool.
+        ipam_released = ManagedFunction(
+            self,
+            "teardown-ipam-released",
+            handler="workflow.cleanup.is_complete",
+            environment={"IPAM_POOL_ID": ipam_pool_id},
+        )
+        ipam_released.role.add_to_policy(
+            aws_iam.PolicyStatement(actions=["ec2:GetIpamPoolAllocations"], resources=["*"])
+        )
+        CustomResource(
+            self,
+            "teardown",
+            service_token=custom_resources.Provider(
                 self,
-                f"vpc-provisioning-api-${func_key}-function",
-                handler=cfg["handler"],
-                code_path=CODE_PATH,
-                environment={"TABLE_NAME": table.table_name} if "table_actions" in cfg else None,
+                "teardown-provider",
+                on_event_handler=cleanup,
+                is_complete_handler=ipam_released.function,
+                query_interval=Duration.minutes(1),
+                # custom resource gets 1 h max
+                total_timeout=Duration.minutes(55),
+            ).service_token,
+        )
+
+        def route(
+            resource: aws_apigateway.IResource,
+            method: str,
+            name: str,
+            *,
+            table_actions: list[str] | None = None,
+            starts: tuple[str, aws_stepfunctions.StateMachine] | None = None,
+        ) -> aws_lambda.IFunction:
+            """One Lambda per route, with only the permissions it needs."""
+            fn = ManagedFunction(
+                self, f"vpc-provisioning-api-{name}-function", handler=f"api.{name}.handler"
             )
-            if func_key == "create_vpc":
-                function.function.add_environment(
-                    "CREATE_STATE_MACHINE_ARN", create_workflow.state_machine.state_machine_arn
-                )
-                create_workflow.state_machine.grant_start_execution(function.function)
-            if func_key == "delete_vpc":
-                function.function.add_environment(
-                    "DELETE_STATE_MACHINE_ARN", delete_workflow.state_machine.state_machine_arn
-                )
-                delete_workflow.state_machine.grant_start_execution(function.function)
-            if "iam_actions" in cfg:
-                function.role.add_to_policy(
-                    aws_iam.PolicyStatement(actions=cfg["iam_actions"], resources=["*"])
-                )
-            if "table_actions" in cfg:
-                table.grant(function.function, *cfg["table_actions"])
-
-            # attach Lambda integration
-            # walk the path segments, reusing resources already created (vpc, vpc/{id})
-            target_resource = api.root
-            walked = ""
-            for segment in cfg["http_path"].strip("/").split("/"):
-                walked += f"/{segment}"
-                if walked not in resources:
-                    resources[walked] = target_resource.add_resource(segment)
-                target_resource = resources[walked]
-
-            target_resource.add_method(
-                cfg["http_method"],
-                aws_apigateway.LambdaIntegration(function.function),
+            if table_actions:
+                fn.function.add_environment("TABLE_NAME", table.table_name)
+                table.grant(fn.function, *table_actions)
+            if starts:
+                env_name, state_machine = starts
+                fn.function.add_environment(env_name, state_machine.state_machine_arn)
+                state_machine.grant_start_execution(fn.function)
+            resource.add_method(
+                method,
+                aws_apigateway.LambdaIntegration(fn.function),
                 authorizer=authorizer,
                 authorization_type=aws_apigateway.AuthorizationType.COGNITO,
             )
+            return fn.function
+
+        vpcs = api.root.add_resource("vpc")
+        vpc = vpcs.add_resource("{id}")
+
+        route(api.root.add_resource("health"), "GET", "health")
+        route(
+            vpcs,
+            "POST",
+            "create_vpc",
+            table_actions=["dynamodb:PutItem"],
+            starts=("CREATE_STATE_MACHINE_ARN", create_workflow.state_machine),
+        )
+        route(vpcs, "GET", "list_vpcs", table_actions=["dynamodb:Scan"])
+        route(vpc, "GET", "get_vpc", table_actions=["dynamodb:GetItem"])
+        route(
+            vpc,
+            "DELETE",
+            "delete_vpc",
+            table_actions=["dynamodb:UpdateItem", "dynamodb:GetItem"],
+            starts=("DELETE_STATE_MACHINE_ARN", delete_workflow.state_machine),
+        )

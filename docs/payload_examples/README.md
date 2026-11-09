@@ -2,18 +2,17 @@
 
 Request bodies for the create VPC endpoint. Files starting with `valid-` pass request validation, files starting with `invalid-` are rejected with a 400.
 
-Send one with curl (see the main README for how to get `$TOKEN` and `$API_URL`):
+Send one with curl (see the main README for how to get `$TOKEN` and `$API_BASE_URL`):
 
 ```bash
-curl -s -X POST "${API_URL}vpc" \
+curl -s -X POST "${API_BASE_URL}/vpc" \
   -H "Authorization: ${TOKEN}" -H "Content-Type: application/json" \
   -d @docs/payload_examples/valid-three-tiers.json
 ```
 
-A valid request returns 202 with `{"id": "<uuid>"}`. Two things can still reject it after validation:
+A valid request returns 202 with `{"id": "<uuid>"}`. If the name is already used by another VPC, it gets a 409 instead, so change `vpc_name` before sending a file twice.
 
-- The name is already used by another VPC: 409. Change `vpc_name` before sending a file twice.
-- The account is out of quota in the Region (VPCs per Region, subnets per VPC): 400.
+Account limits are not checked up front. A Region that is already at its VPC quota still gets a 202, and the run ends `FAILED` with `status_reason` `VpcLimitExceeded`.
 
 ## Valid
 

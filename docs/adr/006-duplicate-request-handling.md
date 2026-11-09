@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-Every `POST /vpc` creates a new record and starts a new workflow. Sending the same request twice builds two VPCs, each with its own IPAM CIDR, and with `private_egress` subnets a second NAT gateway and Elastic IP as well. A client that retries after a timeout can do this by accident. The quota check doesn't catch it, because it only counts VPCs that already exist, not the ones still being built.
+Every `POST /vpc` creates a new record and starts a new workflow. Sending the same request twice builds two VPCs, each with its own IPAM CIDR, and with `private_egress` subnets a second NAT gateway and Elastic IP as well. A client that retries after a timeout can do this by accident. Nothing else in the API stops it, since account limits are only hit later, inside the workflow.
 
 ## Choices
 

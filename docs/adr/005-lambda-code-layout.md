@@ -25,6 +25,6 @@ One source tree under `lambda/`, deployed as a single asset, with one module per
 
 - `lambda/api/` holds one handler per route: `health`, `create_vpc`, `list_vpcs`, `get_vpc` and `delete_vpc`.
 - `lambda/workflow/` holds the Step Functions steps of the create workflow (`build_network`, `create_nat`, `create_routes`) and the `cleanup` function that both workflows use.
-- `lambda/common/` holds the shared code: AWS clients, HTTP responses, the record helpers, the EC2 tagging helpers and the quota lookup.
+- `lambda/common/` holds the shared code: AWS clients, HTTP responses, the record helpers, the EC2 tagging helpers.
 
 Least privilege is unchanged, since each function still gets its own IAM role.

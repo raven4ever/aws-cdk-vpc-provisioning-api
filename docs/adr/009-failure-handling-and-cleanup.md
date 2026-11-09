@@ -1,4 +1,4 @@
-# ADR-010 Failure handling and cleanup
+# ADR-009 Failure handling and cleanup
 
 ## Problem Statement
 
@@ -24,7 +24,7 @@ The create workflow builds a VPC, subnets, an internet gateway, an Elastic IP, a
 
 ## Decision
 
-Automatic rollback by tag. Every resource the workflow creates carries the tag `vpc-provisioning-api:id` with the request id. One cleanup Lambda deletes whatever has that tag, in dependency order: NAT gateway first, waiting for it to be gone, then the Elastic IP, the subnets, the route tables, the internet gateway and the VPC. It does nothing when nothing is left. The create workflow runs it from every failure path and then sets the record to `FAILED` with the cause in `status_reason`. The delete workflow uses the same function, and the function is created once and shared by both state machines.
+Automatic rollback by tag. Every resource the workflow creates carries the tag `vpc-provisioning-api:id` with the request id. One cleanup Lambda deletes whatever has that tag, in dependency order: the NAT gateway first, waiting until it is gone, then the Elastic IP, the subnets, the route tables, the internet gateway and the VPC. It does nothing when nothing is left. The create workflow runs it from every failure path and then marks the record `FAILED`. The delete workflow runs the same function as its first step, so it is created once and shared by both state machines.
 
 Known limits:
 

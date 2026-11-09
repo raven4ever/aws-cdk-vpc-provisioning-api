@@ -3,7 +3,8 @@ from typing import Any
 
 from common.aws import table
 
-# the API only writes PENDING and DELETING, the workflows move the record through the rest
+# API sets PENDING and DELETING (FAILED or old status when a workflow cannot start).
+# Workflows set the rest.
 PENDING = "PENDING"
 ACTIVE = "ACTIVE"
 FAILED = "FAILED"

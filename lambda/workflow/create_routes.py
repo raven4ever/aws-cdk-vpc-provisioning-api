@@ -1,9 +1,10 @@
 from typing import Any
 
-from common.aws import client
+from common.aws import aws_error_names, client
 from common.ec2 import tags
 
 
+@aws_error_names
 def handler(event: dict[str, Any], context: object) -> None:
     """One route table per tier: public to the IGW, private_egress to the NAT, isolated local."""
     ec2 = client("ec2")
@@ -12,7 +13,7 @@ def handler(event: dict[str, Any], context: object) -> None:
     routes = {
         "public": {"GatewayId": network["igw_id"]},
         "private_egress": {"NatGatewayId": nat_id},
-        "private_isolated": None,
+        "private_isolated": None,  # local route only
     }
 
     for tier, route in routes.items():

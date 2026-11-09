@@ -17,35 +17,34 @@ class ManagedFunction(Construct):
         id: str,
         *,
         handler: str,
-        code_path: str,
-        runtime: aws_lambda.Runtime = aws_lambda.Runtime.PYTHON_3_14,
-        environment: dict = None,
+        environment: dict | None = None,
         timeout: Duration | None = None,
     ) -> None:
         super().__init__(scope, id)
 
-        # function IAM role, with no managed policy: the only default permission is writing
-        # to the function's own log group (granted below)
+        # no managed policy: only default permission is writing to own log group
         self.role = aws_iam.Role(
             self,
             "Role",
             assumed_by=aws_iam.ServicePrincipal("lambda.amazonaws.com"),
         )
 
-        # own log group so the role can be limited to it, and it is removed on destroy
+        # own log group: role scoped to it, removed on destroy
         log_group = aws_logs.LogGroup(self, "Logs", removal_policy=RemovalPolicy.DESTROY)
         log_group.grant_write(self.role)
 
-        # Lambda function
         self.function = aws_lambda.Function(
             self,
             "Function",
-            runtime=runtime,
+            runtime=aws_lambda.Runtime.PYTHON_3_14,
+            # pure Python, no native deps: Arm duration 20% cheaper than x86
+            architecture=aws_lambda.Architecture.ARM_64,
             handler=handler,
-            code=aws_lambda.Code.from_asset(code_path),
+            # one asset for every function (ADR-005)
+            code=aws_lambda.Code.from_asset("lambda"),
             role=self.role,
             log_group=log_group,
             environment=environment or {},
-            # the default 3 seconds is too short for the API calls some handlers make
+            # default 3 s too short for the AWS calls some handlers make
             timeout=timeout or Duration.seconds(15),
         )

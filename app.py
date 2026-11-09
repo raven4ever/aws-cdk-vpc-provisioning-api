@@ -1,21 +1,22 @@
 import os
 
-import aws_cdk as cdk
+import aws_cdk
 
 from infra.api_stack import ApiStack
 from infra.foundation_stack import FoundationStack
 
-# create CDK application
-app = cdk.App()
+app = aws_cdk.App()
 
-# create the Foundation stack
 foundation_stack = FoundationStack(
     app,
     "FoundationStack",
     ipam_cidr=os.environ.get("IPAM_ROOT_CIDR", "10.0.0.0/8"),
+    # defaults are public in repo. Override for shared or long-lived deploy.
+    test_user_name=os.environ.get("TEST_USER_NAME", "testuser"),
+    test_user_email=os.environ.get("TEST_USER_EMAIL", "testuser@example.com"),
+    test_user_password=os.environ.get("TEST_USER_PASSWORD", "MySecurePassword123!"),
 )
 
-# create the API stack
 ApiStack(
     app,
     "ApiStack",

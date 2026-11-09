@@ -6,30 +6,37 @@ from aws_cdk import (
     aws_cognito,
     aws_dynamodb,
     aws_ec2,
-)
-from aws_cdk import (
-    custom_resources as cr,
+    custom_resources,
 )
 from constructs import Construct
 
 
 class FoundationStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, ipam_cidr: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        *,
+        ipam_cidr: str,
+        test_user_name: str,
+        test_user_email: str,
+        test_user_password: str,
+        **kwargs,
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        # DynamoDB Table to store VPC requests data
         self.table = aws_dynamodb.Table(
             self,
             "vpc-provisioning-api-table",
             table_name="vpc-provisioning-api-table",
             partition_key=aws_dynamodb.Attribute(name="pk", type=aws_dynamodb.AttributeType.STRING),
             sort_key=aws_dynamodb.Attribute(name="sk", type=aws_dynamodb.AttributeType.STRING),
-            # tombstones of deleted VPCs set this epoch-seconds attribute and expire
+            billing_mode=aws_dynamodb.BillingMode.PAY_PER_REQUEST,
+            # DELETED tombstones expire via this epoch-seconds attribute
             time_to_live_attribute="ttl",
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        # create Cognito Pool
         self.user_pool = aws_cognito.UserPool(
             self,
             "vpc-provisioning-api-user-pool",
@@ -47,38 +54,41 @@ class FoundationStack(Stack):
             removal_policy=RemovalPolicy.DESTROY,
         )
 
-        # add test user
         test_user = aws_cognito.CfnUserPoolUser(
             self,
             "TestUser",
             user_pool_id=self.user_pool.user_pool_id,
-            username="testuser",
+            username=test_user_name,
             user_attributes=[
-                {"name": "email", "value": "testuser@example.com"},
+                {"name": "email", "value": test_user_email},
                 {"name": "email_verified", "value": "true"},
             ],
-            # prevent sending email invitation to dummy test addresses
+            # no invite email to dummy address
             message_action="SUPPRESS",
         )
 
-        # set the user password
-        cr.AwsCustomResource(
+        # set password at deploy: login works with no extra command.
+        # on_update also runs on create, and reapplies a changed password.
+        custom_resources.AwsCustomResource(
             self,
             "SetUserPassword",
-            on_create=cr.AwsSdkCall(
+            on_update=custom_resources.AwsSdkCall(
                 service="CognitoIdentityServiceProvider",
                 action="adminSetUserPassword",
                 parameters={
                     "UserPoolId": self.user_pool.user_pool_id,
                     "Username": test_user.username,
+                    # no forced change on first login
                     "Permanent": True,
-                    # Set to True so the user doesn't need to change it on first login
-                    "Password": "MySecurePassword123!",
+                    "Password": test_user_password,
                 },
-                physical_resource_id=cr.PhysicalResourceId.of(f"{test_user.username}-password"),
+                physical_resource_id=custom_resources.PhysicalResourceId.of(
+                    f"{test_user.username}-password"
+                ),
             ),
-            policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
-                resources=cr.AwsCustomResourcePolicy.ANY_RESOURCE
+            # this pool only, not every pool in account
+            policy=custom_resources.AwsCustomResourcePolicy.from_sdk_calls(
+                resources=[self.user_pool.user_pool_arn]
             ),
         )
 
@@ -90,7 +100,7 @@ class FoundationStack(Stack):
 
         CfnOutput(self, "UserPoolClientId", value=self.client.user_pool_client_id)
 
-        # IPAM hands out the VPC CIDRs. Private IPv4 management needs the advanced tier.
+        # advanced tier: free tier has no private IPv4 pools
         ipam = aws_ec2.CfnIPAM(
             self,
             "vpc-provisioning-api-ipam",
@@ -101,8 +111,7 @@ class FoundationStack(Stack):
             ],
         )
 
-        # VPCs are created only in this Region, and a VPC can only draw from a pool whose
-        # locale is its own Region, so one pool is enough
+        # single Region (ADR-007): a VPC draws only from a pool in its own Region
         self.ipam_pool = aws_ec2.CfnIPAMPool(
             self,
             "vpc-provisioning-api-ipam-pool",

@@ -6,9 +6,8 @@ from common.http import response
 
 
 def handler(event: dict[str, Any], context: object) -> dict[str, Any]:
-    # shortcut: full table scan, fine for a small table. Add a GSI on a constant
-    # partition and paginate the API when the VPC count grows.
-    # created_at is read only to sort, the response carries just the id and the status
+    # shortcut: full scan, fine for small table. Grows: GSI on constant partition, API paging.
+    # created_at read only to sort.
     scan = {
         "FilterExpression": Attr("sk").eq("META"),
         "ProjectionExpression": "id, #s, created_at",
