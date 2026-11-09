@@ -35,5 +35,6 @@ Out of scope:
 | 002 | Authentication mechanism    | Amazon Cognito: no custom auth logic, focus stays on the VPC API       | [ADR-002](docs/adr/002-authentication-mechanism.md)    |
 | 003 | VPC creation flow           | Step Functions with wait steps for slow resources such as NAT gateways | [ADR-003](docs/adr/003-vpc-creation-flow.md)           |
 | 004 | IP address allocator        | Hybrid: IPAM allocates the CIDR, DynamoDB caches it for retrieval      | [ADR-004](docs/adr/004-ip-address-allocator.md)        |
+| 005 | Lambda code layout          | One source tree, one module per function, shared code alongside        | [ADR-005](docs/adr/005-lambda-code-layout.md)          |
 
 ## Technology Stack

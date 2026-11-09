@@ -1,27 +1,35 @@
 from aws_cdk import Stack, aws_apigateway, aws_cognito
 from constructs import Construct
 
-from infra.constructs.create_vpc_workflow import CreateWorkflow
 from infra.constructs.function_factory import ManagedFunction
+
+CODE_PATH = "lambda"
 
 FUNCTIONS = {
     "health": {
-        "handler": "main.lambda_handler",
-        "path": "lambda/health",
+        "handler": "api.health.handler",
         "http_method": "GET",
         "http_path": "health",
     },
     "create_vpc": {
-        "handler": "main.lambda_handler",
-        "path": "lambda/create_vpc",
+        "handler": "api.create_vpc.handler",
         "http_method": "POST",
         "http_path": "vpc",
     },
-    "get_vpc": {
-        "handler": "main.lambda_handler",
-        "path": "lambda/get_vpc",
+    "list_vpcs": {
+        "handler": "api.list_vpcs.handler",
         "http_method": "GET",
         "http_path": "vpc",
+    },
+    "get_vpc": {
+        "handler": "api.get_vpc.handler",
+        "http_method": "GET",
+        "http_path": "vpc/{id}",
+    },
+    "delete_vpc": {
+        "handler": "api.delete_vpc.handler",
+        "http_method": "DELETE",
+        "http_path": "vpc/{id}",
     },
 }
 
@@ -54,26 +62,27 @@ class ApiStack(Stack):
 
         resources = {}
 
+        # create the API Lambdas
         for func_key, cfg in FUNCTIONS.items():
             print(f"triggering {func_key}")
+
             # create the function
             function = ManagedFunction(
                 self,
                 f"vpc-provisioning-api-${func_key}-function",
                 handler=cfg["handler"],
-                code_path=cfg["path"],
+                code_path=CODE_PATH,
             )
 
             # attach Lambda integration
-            path = cfg["http_path"].strip("/")
-
-            if not path:
-                target_resource = api.root
-            elif path in resources:
-                target_resource = resources[path]
-            else:
-                target_resource = api.root.add_resource(path)
-                resources[path] = target_resource
+            # walk the path segments, reusing resources already created (vpc, vpc/{id})
+            target_resource = api.root
+            walked = ""
+            for segment in cfg["http_path"].strip("/").split("/"):
+                walked += f"/{segment}"
+                if walked not in resources:
+                    resources[walked] = target_resource.add_resource(segment)
+                target_resource = resources[walked]
 
             target_resource.add_method(
                 cfg["http_method"],
@@ -83,4 +92,4 @@ class ApiStack(Stack):
             )
 
         # create the create step function
-        CreateWorkflow(self)
+        # CreateWorkflow(self)
