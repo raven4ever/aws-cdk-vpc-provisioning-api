@@ -35,7 +35,7 @@ class ManagedFunction(Construct):
         # Lambda function
         self.function = aws_lambda.Function(
             self,
-            "Resource",
+            "Function",
             runtime=runtime,
             handler=handler,
             code=aws_lambda.Code.from_asset(code_path),

@@ -1,4 +1,13 @@
-from aws_cdk import Duration, RemovalPolicy, Stack, aws_cognito, aws_dynamodb
+from aws_cdk import (
+    Duration,
+    RemovalPolicy,
+    Stack,
+    aws_cognito,
+    aws_dynamodb,
+)
+from aws_cdk import (
+    custom_resources as cr,
+)
 from constructs import Construct
 
 
@@ -35,7 +44,7 @@ class FoundationStack(Stack):
         )
 
         # add test user
-        aws_cognito.CfnUserPoolUser(
+        test_user = aws_cognito.CfnUserPoolUser(
             self,
             "TestUser",
             user_pool_id=self.user_pool.user_pool_id,
@@ -46,6 +55,27 @@ class FoundationStack(Stack):
             ],
             # prevent sending email invitation to dummy test addresses
             message_action="SUPPRESS",
+        )
+
+        # set the user password
+        cr.AwsCustomResource(
+            self,
+            "SetUserPassword",
+            on_create=cr.AwsSdkCall(
+                service="CognitoIdentityServiceProvider",
+                action="adminSetUserPassword",
+                parameters={
+                    "UserPoolId": self.user_pool.user_pool_id,
+                    "Username": test_user.username,
+                    "Permanent": True,
+                    # Set to True so the user doesn't need to change it on first login
+                    "Password": "MySecurePassword123!",
+                },
+                physical_resource_id=cr.PhysicalResourceId.of(f"{test_user.username}-password"),
+            ),
+            policy=cr.AwsCustomResourcePolicy.from_sdk_calls(
+                resources=cr.AwsCustomResourcePolicy.ANY_RESOURCE
+            ),
         )
 
         self.client = self.user_pool.add_client(
